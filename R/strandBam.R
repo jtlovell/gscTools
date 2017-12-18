@@ -83,7 +83,6 @@ strandBam<-function(gff.file, bam.files, genes2test,
     if(verbose) cat("scanning",length(bamfiles),"bamfiles ... \n")
     bamlist = lapply(bamfiles, function(x){
       if(verbose) cat(" ...",x)
-
       dat <- Rsamtools::scanBam(file=x, param = param)
       names(dat)<-geneID
       if(verbose) cat("\tn.regions = ",length(dat),"and total reads =")
@@ -196,11 +195,14 @@ strandBam<-function(gff.file, bam.files, genes2test,
 
     genes2test = genes2test[genes2test %in% gff.mindist$geneID]
     if(verbose) cat("retaining", length(genes2test), "genes <", min.dist, "bp from nearest neighbor\n")
+    bed = gff.mindist[gff.mindist$geneID %in% genes2test, ]
+  }else{
+    bed = gff
   }
 
-  bed = gff.mindist[gff.mindist$geneID %in% genes2test, ]
+
   bed<-bed[!duplicated(bed[,c(1,4,5)]),]
-  gff.mindist<-gff.mindist[!duplicated(gff.mindist[,c(1,4,5)]),]
+
   good.flags = data.frame(flag = c(83,99,147,163),
                           pair = c(1,1,2,2),
                           which.reverse = c("read","mate","read","mate"),
