@@ -5,6 +5,7 @@
 # -- ad hoc functions
 find_kmerPos <- function(dnass, kmers, jumpSize, minWidth, kmerProp){
 
+  revmap <- mlist <- mergem <- out <- nbp <- propSeq <- chr <- i <- NULL
   # -- for each chromosome, find and aggregate all kmers
   acrossChrs <- rbindlist(lapply(names(dnass), function(i){
     mlist <- lapply(kmers, function(x) vmatchPattern(x, subject = dnass[i])[[1]])
@@ -18,11 +19,18 @@ find_kmerPos <- function(dnass, kmers, jumpSize, minWidth, kmerProp){
       with.revmap = TRUE)
     if(length(mergem) == 0)
       return(NULL)
+
     out <- as.data.table(mergem)
-    out[,nbp := sapply(revmap, length) * max(nchar(kmers))]
-    out[,`:=`(propSeq = nbp / width, chr = i)]
-    out <- subset(out, width >= minWidth & propSeq >= kmerProp)
-    out <- out[,c("chr", "start", "end")]
+    if("revmap" %in% colnames(mergem)){
+      out[,nbp := sapply(revmap, length) * max(nchar(kmers))]
+      out[,`:=`(propSeq = nbp / width, chr = i)]
+      out <- subset(out, width >= minWidth & propSeq >= kmerProp)
+      out <- out[,c("chr", "start", "end")]
+    }else{
+      out[,chr := i]
+      out <- subset(out, width >= minWidth)
+      out <- out[,c("chr", "start", "end")]
+    }
     return(out)
   }))
 
@@ -322,7 +330,7 @@ classify_genomes <- function(faFiles,
   }))
 
   # -- make the plot
-  blockCoords[,genome := factor(genome, levels = gsub(toStrip, "", basename(faFiles)))]
+  blockCoords[,genome := factor(genome, levels = unique(genome))]
   blockCoords[,chr := gsub("chr|chromosome|scaffold|contig", "", tolower(chr))]
   blockCoords[,`:=`(chri = as.numeric(gsub('\\D+','', chr)),
                     chrn = frank(chr, ties.method = "dense")), by = "genome"]
@@ -343,7 +351,8 @@ suppressPackageStartupMessages(library("argparse"))
 ################################################################################
 ################################################################################
 # --create parser object
-parser <- ArgumentParser()
+parser <- ArgumentParser(
+  description = "make a maps of contig and telomere positions from fasta assembly files")
 
 # specify our desired options
 # by default ArgumentParser will add an help option
@@ -351,33 +360,32 @@ parser$add_argument(
   "-f", "--faFiles", type = "character", default = "",
   help = "comma-separated string of paths to fasta files")
 parser$add_argument(
-  "-t", "--telokmers", type = "character", default = "CCCGAAA,CCCTAAA",
-  help = "comma-separated string of paths to fasta files")
+  "-k", "--kmers", type = "character", default = "CCCGAAA,CCCTAAA",
+  help = "comma-separated string of telomere kmers [default = CCCGAAA,CCCTAAA]")
 parser$add_argument(
-  "-z", "--teloclust", type = "character", default = "50,500,0.75",
-  help = "comma-separated cluster params (max gap, min width, min %telo sequence) [default = %(default)s]")
+  "-t", "--teloParams", type = "character", default = "50,500,0.75",
+  help = "comma-separated cluster params (max gap, min width, min perc. telo sequence) [default = 50,500,0.75]")
 parser$add_argument(
   "-p", "--pdfFile", type = "character", default = "contigPlot.pdf",
-  help = "output pdf file name [default= %(default)s]")
+  help = "output pdf file name [default= contigPlot.pdf]")
 parser$add_argument(
   "-o", "--outFile", type = "character", default = "contigCoords.txt",
-  help = "output text file with contig coordinates [default= %(default)s]")
+  help = "output text file with contig coordinates [default= contigCoords.txt]")
 parser$add_argument(
   "-m", "--minChrLen", type = "integer", default = 1e6,
-  help = "the smallest chromosome to show [default= %(default)s]")
+  help = "the smallest chromosome to show [default= 1Mb]")
 parser$add_argument(
   "-g", "--gapSize", type = "integer", default = 1e3,
-  help = "window size to average over to merge gaps [default= %(default)s]")
+  help = "window size to average over to merge gaps [default= 1kb]")
 parser$add_argument(
   "-r", "--regex", type = "character", default = ".fa.gz$|.fa$",
-  help = "quoted character, a regex to strip from the file name [default= %(default)s]")
+  help = "quoted character, a regex to strip from the file name [default= .fa.gz$|.fa$]")
 parser$add_argument(
   "-q", "--quietly", action = "store_false",
   dest = "verbose", help = "Print little output")
 parser$add_argument(
-  "-c", "--print2stdout", action = "store_true",
-  dest = "print2stdout", help = "print the summary file to stdout instead of outfile")
-
+  "-c", "--copy2stdout", action = "store_true",
+  dest = "copy2stdout", help = "print the summary file to stdout instead of outfile")
 
 ################################################################################
 ################################################################################
@@ -421,9 +429,9 @@ faFilesIn <- fs
 
 # -- get arguments in order
 toStripIn <- as.character(args$regex)
-teloKmersIn <- as.character(strsplit(args$telokmers, ",")[[1]])
+teloKmersIn <- as.character(strsplit(args$kmers, ",")[[1]])
 gapSizeIn <- as.numeric(args$gapSize)
-teloParamIn <- as.numeric(strsplit(args$teloclust, ",")[[1]])
+teloParamIn <- as.numeric(strsplit(args$teloParams, ",")[[1]])
 minChrSizeIn <- args$minChrLen
 paletteIn <- viridisLite::viridis
 verboseIn <- args$verbose
@@ -448,7 +456,7 @@ test <- classify_genomes(
   verbose = verboseIn)
 
 nope <- dev.off()
-if(args$print2stdout){
+if(args$copy2stdout){
   fwrite(test, sep = "\t", file = "", quote = FALSE)
 }else{
   fwrite(test, file = args$outFile, sep = "\t")
